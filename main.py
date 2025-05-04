@@ -4,7 +4,7 @@ import ollama
 client = ollama.Client()
 
 # Define the model and the input prompt
-model = "llama2"  # Replace with your model name
+model = "mistral"  # Replace with your model name
 prompt = "What is Python?"
 
 # Send the query to the model
