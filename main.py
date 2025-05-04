@@ -35,7 +35,6 @@ async def get_response(file: UploadFile = File(...)):
         client = ollama.Client()
 
         prompt = f"""
-        Provide 2 responses: the first one with temperature 0.1 and the second one with temperature 1.
         Generate a 5-item multiple choice quiz (Provide the choices using A, B, C, D) based on the document.
         Provide the correct answer and an explanation for each question using this format:
         [Question number]: [question]
