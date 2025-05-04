@@ -1,14 +1,13 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
 import uvicorn
 import os
-import io
-import pdftotext  # Assuming you're using this for PDF extraction
+from pdftotext import extract_text_from_pdf
 import ollama
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 
-from fastapi.middleware.cors import CORSMiddleware
-
+# CORS configuration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -24,39 +23,63 @@ async def welcome():
 @app.post("/get-response")
 async def get_response(file: UploadFile = File(...)):
     try:
-        # Read the uploaded PDF file content
+        # Read the uploaded file content
         contents = await file.read()
+        
+        # Extract text from PDF using our module
+        try:
+            extracted_text = extract_text_from_pdf(file_bytes=contents)
+        except Exception as e:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Failed to process PDF: {str(e)}"
+            )
 
-        # Extract text from PDF
-        pdf = pdftotext.PDF(io.BytesIO(contents))
-        extracted_text = "\n\n".join(pdf)
+        if not extracted_text.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="The uploaded PDF contains no extractable text"
+            )
 
-        # Initialize Ollama client
-        client = ollama.Client()
-
+        # Prepare the prompt
         prompt = f"""
-        Generate a 5-item multiple choice quiz (Provide the choices using A, B, C, D) based on the document.
-        Provide the correct answer and an explanation for each question using this format:
-        [Question number]: [question]
+        Analyze the following document and generate a 5-item multiple choice quiz based on its content.
+        For each question, provide 4 choices (A-D), indicate the correct answer, and include a brief explanation.
+
+        Required format for each question:
+        [Question number]: [question text]
         A: [choice A]
         B: [choice B]
         C: [choice C]
         D: [choice D]
-        Answer: [correct answer]
-        Explanation: [explanation]
-        
-        --- PDF Content ---
-        {extracted_text}
+        Answer: [correct answer letter]
+        Explanation: [brief explanation why this is correct]
+
+        --- DOCUMENT CONTENT ---
+        {extracted_text[:10000]}  # Limiting to first 10k chars to avoid overly long prompts
         """
 
-        response = client.generate(model="mistral", prompt=prompt)
+        # Get response from Ollama
+        try:
+            response = ollama.generate(
+                model="mistral",
+                prompt=prompt,
+                options={"temperature": 0.7}
+            )
+            return {"quiz": response["response"]}
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to generate quiz: {str(e)}"
+            )
 
-        print("Response from Mistral:")
-        print(response.response)
-        return {"response": response.response}
-
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=f"Unexpected error: {str(e)}"
+        )
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 7860))
